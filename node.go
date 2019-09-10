@@ -18,6 +18,7 @@ package redis
 import (
 	"bufio"
 	"container/list"
+	"encoding"
 	"errors"
 	"fmt"
 	"net"
@@ -285,8 +286,26 @@ func (conn *redisConn) writeCommand(cmd string, args []interface{}) error {
 			err = conn.writeString(arg)
 		case []byte:
 			err = conn.writeBytes(arg)
+		case []int:
+			dest := ""
+			size := len(arg) - 1 // To match up with idx, since that starts from 0
+			for idx, val := range arg {
+				dest = dest + strconv.Itoa(val)
+				if idx != size {
+					dest = dest + ","
+				}
+			}
+			err = conn.writeString(dest)
 		default:
-			err = fmt.Errorf("unknown type %T", arg)
+			cast, ok := arg.(encoding.BinaryMarshaler)
+			if !ok {
+				err = fmt.Errorf("non-simple type %T (NOT int/int64/float64/string/[]byte/[]int) doesn't implement BinaryMarshaler and thus can't be serialized", arg)
+			} else {
+				bytes, err := cast.MarshalBinary()
+				if err == nil {
+					err = conn.writeBytes(bytes)
+				}
+			}
 		}
 	}
 
